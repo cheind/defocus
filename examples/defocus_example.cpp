@@ -82,6 +82,7 @@ void getNeighbors(int x, int y, int width, int height, const int *neighbors, int
 
 void computeColorWeights(int x, int y, const int *neighbors, int nn, const cv::Mat &colorsLab, double strength, double *weights) {
     cv::Vec3d labRef = colorsLab.at<cv::Vec3b>(y, x);
+
     for (int i = 0; i < nn; ++i) {
         int nx = neighbors[i*2+0];
         int ny = neighbors[i*2+1];
@@ -90,7 +91,7 @@ void computeColorWeights(int x, int y, const int *neighbors, int nn, const cv::M
         cv::Vec3d diff = labRef - labN;
         
         
-        weights[i] = std::exp(- std::sqrt(diff.dot(diff)) / strength);
+        weights[i] = std::max<double>(std::exp(- std::sqrt(diff.dot(diff)) / strength), 0.001);
     }
 }
 
@@ -109,7 +110,7 @@ void dense(cv::Mat &depths, cv::Mat &colors) {
     Eigen::MatrixXd rhs(rows * cols, 1);
     rhs.setZero();
 
-    const double colorSimilarityStrength = 10.0;
+    const double colorSimilarityStrength = 10;
     
     int neighbors[8*2];
     double colorWeights[8];
@@ -132,11 +133,6 @@ void dense(cv::Mat &depths, cv::Mat &colors) {
                 double sumweights = 0.0;
                 for (int i = 0; i < nn; ++i) {
                     sumweights += colorWeights[i];
-                }
-                
-                if (sumweights == 0.0) {
-                    sumweights = 1.0;
-                    colorWeights[0] = 1.0;
                 }
 
                 triplets.push_back(T(idx, idx, 1.0));
