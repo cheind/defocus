@@ -16,27 +16,12 @@
 
 namespace defocus {
     
-    class SmallMotionBundleAdjustment {
-    public:
-        
-        /** Create bundle adjustment problem */
-        SmallMotionBundleAdjustment(Eigen::DenseIndex nCameras, Eigen::DenseIndex nObservationsPerCamera);
-        
-        /** Add an observation in the retina plane (x, y, 1) by a specific camera. */
-        void setObservation(Eigen::DenseIndex cameraIdx, Eigen::DenseIndex observationIdx, const Eigen::Vector3d &point);
-        
-        /** Run bundle adjustment */
-        double run(bool debug, Eigen::DenseIndex refCameraIdx);
-        
-        /** Get reconstructed points */
-        Eigen::Matrix<double, 3, Eigen::Dynamic> pointsInReferenceCamera() const;
-        
-    private:
-        Eigen::Matrix<double, 3, Eigen::Dynamic> _points;
-        Eigen::Matrix<double, 6, Eigen::Dynamic> _cameras;
-        Eigen::DenseIndex _nCameras, _nObservations, _refCamera;
-        std::vector<double> _idepths;
-    };
+    
+    double solveSmallMotionBundleAdjustment(const Eigen::Matrix<double, 3, Eigen::Dynamic> &retinaPoints,
+                                          Eigen::Matrix<double, 6, Eigen::Dynamic> &cameraParameters,
+                                          Eigen::Matrix<double, 3, Eigen::Dynamic> &reconstructedPoints,
+                                          Eigen::DenseIndex nCameras,
+                                          Eigen::DenseIndex nObservationsPerCamera);
 }
 
 #endif

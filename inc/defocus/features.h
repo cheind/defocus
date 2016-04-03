@@ -32,6 +32,17 @@ namespace defocus {
     std::vector<cv::Point2f> eliminateInvalidFeatures(const std::vector<cv::Point2f> &locs, const std::vector<uchar> &status);
     
     
+    template<class T>
+    void removeByStatus(std::vector<T> &v, const std::vector<uchar> &status) {
+        size_t i, k;
+        for( i = k = 0; i < v.size(); i++) {
+            if( !status[i] )
+                continue;
+            
+            std::swap(v[k++], v[i]);
+        }
+        v.resize(k);
+    }
 }
 
 #endif

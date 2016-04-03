@@ -181,7 +181,6 @@ int main(int argc, char **argv) {
     std::vector<uchar> status(corners.size(), 1);
     featuresPerFrame.push_back(corners);
 
-
     cv::Mat f;
     while (vc.grab()) {
         vc.retrieve(f);
@@ -204,45 +203,44 @@ int main(int argc, char **argv) {
         cv::waitKey(10);
     }
     
-    Eigen::DenseIndex nvalid = std::count(status.begin(), status.end(), 1);
-    defocus::SmallMotionBundleAdjustment ba(featuresPerFrame.size(), nvalid);
     for (Eigen::DenseIndex c = 0; c < featuresPerFrame.size(); ++c) {
+        defocus::removeByStatus(featuresPerFrame[c], status);
+    }
+    
+    const Eigen::DenseIndex nFrames = featuresPerFrame.size();
+    const Eigen::DenseIndex nObs = featuresPerFrame[0].size();
+    
+    Eigen::Matrix<double, 3, Eigen::Dynamic> retinaPoints(3, nFrames * nObs);
+    
+    for (Eigen::DenseIndex c = 0; c < nFrames; ++c) {
     
         const OpenCVFeatures &f = featuresPerFrame[c];
-        Eigen::DenseIndex idx = 0;
     
-        for (Eigen::DenseIndex o = 0; o < f.size(); ++o) {
-            if (!status[o])
-                continue;
-            
-            ba.setObservation(c, idx++, defocus::pixelToRetina(f[o].x, f[o].y, invk));
+        for (Eigen::DenseIndex o = 0; o < nObs; ++o) {
+            retinaPoints.col(c * nObs + o) = defocus::pixelToRetina(f[o].x, f[o].y, invk);
         }
     }
-    const Eigen::DenseIndex refFrame = 0;
-    ba.run(true, refFrame);
     
-    Eigen::MatrixXd points = ba.pointsInReferenceCamera();
-    Eigen::MatrixXd colors(3, points.cols());
-  
+    Eigen::Matrix<double, 6, Eigen::Dynamic> cameras;
+    Eigen::Matrix<double, 3, Eigen::Dynamic> points3d;
+    double err = defocus::solveSmallMotionBundleAdjustment(retinaPoints, cameras, points3d, nFrames, nObs);
+    
+    
+    Eigen::MatrixXd colors(3, points3d.cols());
     cv::Mat depths(ref.size(), CV_64FC1);
     depths.setTo(0);
 
-    Eigen::DenseIndex idx = 0;
-    for (size_t i = 0; i < featuresPerFrame[refFrame].size(); ++i) {
-        if (!status[i])
-            continue;
-        
-        cv::Point2f f = featuresPerFrame[refFrame][i];
+    for (Eigen::DenseIndex i = 0; i < nObs; ++i) {
+    
+        cv::Point2f f = featuresPerFrame[0][i];
         cv::Vec3b c = ref.at<cv::Vec3b>(f);
-        colors(0, idx) = c(2);
-        colors(1, idx) = c(1);
-        colors(2, idx) = c(0);
+        colors(0, i) = c(2);
+        colors(1, i) = c(1);
+        colors(2, i) = c(0);
             
-        depths.at<double>(f) = points.col(idx).z();
-        
-        ++idx;
+        depths.at<double>(f) = points3d.col(i).z();
     }
-    writePly("points.ply", points, colors);
+    writePly("points.ply", points3d, colors);
 
     dense(depths, ref);    
 

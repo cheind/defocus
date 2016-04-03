@@ -59,59 +59,44 @@ namespace defocus {
         const double *_no;
         const double *_np;
     };
-
     
-    SmallMotionBundleAdjustment::SmallMotionBundleAdjustment(Eigen::DenseIndex nCameras, Eigen::DenseIndex nObservationsPerCamera)
+    double solveSmallMotionBundleAdjustment(const Eigen::Matrix<double, 3, Eigen::Dynamic> &retinaPoints,
+                                          Eigen::Matrix<double, 6, Eigen::Dynamic> &cameraParameters,
+                                          Eigen::Matrix<double, 3, Eigen::Dynamic> &reconstructedPoints,
+                                          Eigen::DenseIndex nCameras,
+                                          Eigen::DenseIndex nObservationsPerCamera)
     {
-        _points.resize(3, nCameras * nObservationsPerCamera);
-        _cameras.resize(6, nCameras);
-        _idepths.resize(nObservationsPerCamera);
-        
-        _nCameras = nCameras;
-        _nObservations = nObservationsPerCamera;
-        _refCamera = 0;
-    }
-    
-    void SmallMotionBundleAdjustment::setObservation(Eigen::DenseIndex cameraIdx, Eigen::DenseIndex observationIdx, const Eigen::Vector3d &point)
-    {
-        Eigen::DenseIndex col = cameraIdx * _nObservations + observationIdx;
-        _points.col(col) = point;
-    }
-    
-    double SmallMotionBundleAdjustment::run(bool debug, Eigen::DenseIndex refCameraIdx) {
-        _refCamera = refCameraIdx;
-        
         // Setup cameras with identical poses
-        _cameras.setZero();
+        cameraParameters.resize(6, nCameras);
+        cameraParameters.setZero();
         
         // Setup initial inverse depths
+        std::vector<double> idepths(nObservationsPerCamera);
         std::default_random_engine gen;
         std::uniform_real_distribution<double> dist(0.1, 1.5);
-        std::generate(_idepths.begin(), _idepths.end(), [&] () { return dist(gen); });
+        std::generate(idepths.begin(), idepths.end(), [&] () { return dist(gen); });
         
         // Setup NLLS
         
         ceres::Problem problem;
         
         // For each camera (except the reference camera)
-        for (Eigen::DenseIndex c = 0; c < _nCameras; ++c) {
-            if (c == _refCamera)
-                continue;
+        for (Eigen::DenseIndex c = 1; c < nCameras; ++c) {
             
             // For each observation
-            for (Eigen::DenseIndex o = 0; o < _nObservations; ++o) {
+            for (Eigen::DenseIndex o = 0; o < nObservationsPerCamera; ++o) {
                 
                 // Add a residual block
-                Eigen::DenseIndex idx = c * _nObservations + o;
-                Eigen::DenseIndex idxInRef = _refCamera * _nObservations + o;
+                Eigen::DenseIndex idx = c * nObservationsPerCamera + o;
+                Eigen::DenseIndex idxInRef = o;
                 
-                ceres::CostFunction *cost_function = ReprojectionError::Create(_points.col(idx).data(), _points.col(idxInRef).data());
+                ceres::CostFunction *cost_function = ReprojectionError::Create(retinaPoints.col(idx).data(), retinaPoints.col(idxInRef).data());
                 ceres::LossFunction *loss_function = new ceres::HuberLoss(1.0);
                 
                 problem.AddResidualBlock(cost_function,
                                          loss_function,
-                                         _cameras.col(c).data(),
-                                         &_idepths.at(o));
+                                         cameraParameters.col(c).data(),
+                                         &idepths.at(o));
                 
             }
         }
@@ -124,31 +109,21 @@ namespace defocus {
         options.linear_solver_type = ceres::ITERATIVE_SCHUR;
         options.use_inner_iterations = true;
         options.max_num_iterations = 100;
-        options.minimizer_progress_to_stdout = debug;
+        options.minimizer_progress_to_stdout = true;
         
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
-        if (debug) {
-            std::cout << summary.FullReport() << std::endl;
+        std::cout << summary.FullReport() << std::endl;
+        
+        // Build points
+        reconstructedPoints.resize(3, nObservationsPerCamera);
+        for (Eigen::DenseIndex i = 0; i < nObservationsPerCamera; ++i) {
+            reconstructedPoints.col(i) = retinaPoints.col(i) * (1.0 / idepths[i]);
         }
         
-        // Make sure the reference camera is at identity.
-        _cameras.col(_refCamera).setZero();
         
         return summary.final_cost;
-        
-    }
-    
-    Eigen::Matrix<double, 3, Eigen::Dynamic> SmallMotionBundleAdjustment::pointsInReferenceCamera() const {
-        Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, _nObservations);
-        
-        for (Eigen::DenseIndex i = 0; i < _nObservations; ++i) {
-            Eigen::DenseIndex idx = _refCamera * _nObservations + i;
-            points.col(i) = _points.col(idx) * (1.0 / _idepths[i]);
-        }
-        
-        return points;
-        
+
     }
     
     
