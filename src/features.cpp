@@ -67,7 +67,7 @@ namespace defocus {
             
             img.copyTo(_nextGray);
             cv::TermCriteria term(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 50, 0.001);
-            cv::calcOpticalFlowPyrLK(_prevGray, _nextGray, _prev, _next, _nextStatus, _err, cv::Size(11, 11), 5, term);
+            cv::calcOpticalFlowPyrLK(_prevGray, _nextGray, _prev, _next, _nextStatus, _err, cv::Size(21, 21), 3, term, 0, 0.001);
             
             for (size_t i = 0; i < _nextStatus.size(); ++i) {
                 _nextStatus[i] &= _prevStatus[i];

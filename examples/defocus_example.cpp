@@ -50,18 +50,58 @@ void writePly(const char *path, const Eigen::MatrixXd &points, const Eigen::Matr
     ofs.close();
 }
 
-void dense(cv::Mat &depths, cv::Mat &colors) {
-    // Variational with energy: (dout - dsparse)^2 + lambda * |nabla(dout)|^2
-    // First term is only defined for sparse pixel positions.
-    // leads to linear system of equations: Ax = b with one row per pixel: 
-    //  dout(x,y) + lambda * laplacian(dout(x,y)) = dsparse(x,y)
-    //  dout(x,y) + lambda * (-4*dout(x,y) + dout(x,y-1) + dout(x+1,y) + dout(x,y+1) + dout(x-1,y)) = dsparse(x,y)
 
+const int neighbors3x3[] = {
+    0, -1, // N
+    1, -1, // NE
+    1,  0, // E
+    1,  1, // SE
+    0,  1, // S
+   -1,  1, // SW
+   -1,  0, // W
+   -1, -1, // NW
+};
+
+void getNeighbors(int x, int y, int width, int height, const int *neighbors, int n, int *validneighbors, int *nvalid) {
+    *nvalid = 0;
+    for (int i = 0; i < n; ++i) {
+        int nx = neighbors[i*2+0];
+        int ny = neighbors[i*2+1];
+        
+        int tx = x + nx;
+        int ty = y + ny;
+        
+        bool avail = (tx >= 0 && ty >= 0 && tx < width && ty < height);
+        if (avail) {
+            validneighbors[*nvalid*2+0] = tx;
+            validneighbors[*nvalid*2+1] = ty;
+            (*nvalid) += 1;
+        }
+    }
+}
+
+void computeColorWeights(int x, int y, const int *neighbors, int nn, const cv::Mat &colorsLab, double strength, double *weights) {
+    cv::Vec3d labRef = colorsLab.at<cv::Vec3b>(y, x);
+    for (int i = 0; i < nn; ++i) {
+        int nx = neighbors[i*2+0];
+        int ny = neighbors[i*2+1];
+        
+        cv::Vec3d labN = colorsLab.at<cv::Vec3b>(ny, nx);
+        cv::Vec3d diff = labRef - labN;
+        
+        
+        weights[i] = std::exp(- std::sqrt(diff.dot(diff)) / strength);
+    }
+}
+
+inline int toIdx(int x, int y, int cols) {
+    return y * cols + x;
+}
+
+void dense(cv::Mat &depths, cv::Mat &colors) {
 
     typedef Eigen::Triplet<double> T;
     std::vector<T> triplets;
-
-    std::cout << __LINE__ << std::endl;
 
     int rows = depths.rows;
     int cols = depths.cols;
@@ -69,63 +109,57 @@ void dense(cv::Mat &depths, cv::Mat &colors) {
     Eigen::MatrixXd rhs(rows * cols, 1);
     rhs.setZero();
 
-    std::cout << __LINE__ << std::endl;
-
-    const double lambda = 0.2;
+    const double colorSimilarityStrength = 10.0;
+    
+    int neighbors[8*2];
+    double colorWeights[8];
+    
 
     int idx = 0;
     for (int y = 0; y < depths.rows; ++y) {
         for (int x = 0; x < depths.cols; ++x, ++idx) {
 
             double d = depths.at<double>(y, x);
-            
-            double c = 0.0;
 
             if (d > 0.0) {
+                triplets.push_back(T(idx, idx, 1.0));
                 rhs(idx, 0) = d;
-                c += 1.0;
+            } else {
+                int nn = 0;
+                getNeighbors(x, y, depths.cols, depths.rows, neighbors3x3, 8, neighbors, &nn);
+                computeColorWeights(x, y, neighbors, nn, colors, colorSimilarityStrength, colorWeights);
+                
+                double sumweights = 0.0;
+                for (int i = 0; i < nn; ++i) {
+                    sumweights += colorWeights[i];
+                }
+                
+                if (sumweights == 0.0) {
+                    sumweights = 1.0;
+                    colorWeights[0] = 1.0;
+                }
+
+                triplets.push_back(T(idx, idx, 1.0));
+                
+                for (int i = 0; i < nn; ++i) {
+                    int nidx = toIdx(neighbors[i*2+0], neighbors[i*2+1], depths.cols);
+                    
+                    if (y == 0 && x == 0)
+                        std::cout << colorWeights[i] << std::endl;
+                    
+
+                    triplets.push_back(T(idx, nidx, - (1.0 / sumweights) * colorWeights[i]));
+                }
             }
             
-
-            if (y > 0) {
-                // North neighbor 
-                c -= lambda;
-                triplets.push_back(T(idx, (y - 1)*cols + x, lambda));
-            }
-
-            if (x > 0) {
-                // West neighbor 
-                c -= lambda;
-                triplets.push_back(T(idx, (y)*cols + (x-1), lambda));
-            }
-
-            if (y < (rows - 1)) {
-                // South neighbor 
-                c -= lambda;
-                triplets.push_back(T(idx, (y+1)*cols + x, lambda));
-            }
-
-            if (x < (cols - 1)) {
-                // East neighbor 
-                c -= lambda;
-                triplets.push_back(T(idx, (y)*cols + (x+1), lambda));
-            }
-
-            // Center
-            triplets.push_back(T(idx, idx, c));
         }
     }
-
-    std::cout << __LINE__ << std::endl;
 
     Eigen::SparseMatrix<double> A(rows*cols, rows*cols);
     A.setFromTriplets(triplets.begin(), triplets.end());
 
-    std::cout << __LINE__ << std::endl;
-
     Eigen::SparseLU< Eigen::SparseMatrix<double> > solver;
-    solver.analyzePattern(A);
-    solver.factorize(A);
+    solver.compute(A);
 
     Eigen::MatrixXd result(rows*cols, 1);
     result = solver.solve(rhs);
@@ -157,18 +191,28 @@ int main(int argc, char **argv) {
     // Taken from http://yf.io/p/tiny/
     // Use 8point_defocus.exe "stream\stone6_still_%04d.png"
     
+    /*
     Eigen::Matrix3d k;
     k <<
         1781.0, 0.0, 960.0,
         0.0, 1781.0, 540.0,
         0.0, 0.0, 1.0;
 
+     */
+    Eigen::Matrix3d k;
+    k <<
+    1781.0 / 2, 0.0, 960.0 / 2,
+    0.0, 1781.0 / 2, 540.0 / 2,
+    0.0, 0.0, 1.0;
+    
     Eigen::Matrix3d invk = k.inverse();
 
 
     // Detect trackable features in reference frame
-    cv::Mat ref, refGray, gray;
+    cv::Mat ref, refF, refGray, refLab, gray;
     vc >> ref;
+    
+    cv::resize(ref, ref, cv::Size(), 0.5, 0.5);
     cv::cvtColor(ref, refGray, CV_BGR2GRAY);
     
     typedef std::vector<cv::Point2f> OpenCVFeatures;
@@ -184,6 +228,7 @@ int main(int argc, char **argv) {
     cv::Mat f;
     while (vc.grab()) {
         vc.retrieve(f);
+        cv::resize(f, f, cv::Size(), 0.5, 0.5);
         cv::cvtColor(f, gray, CV_BGR2GRAY);
 
         std::vector<cv::Point2f> loc;
@@ -242,7 +287,7 @@ int main(int argc, char **argv) {
     }
     writePly("points.ply", points3d, colors);
 
-    dense(depths, ref);    
+    dense(depths, ref);
 
     double minv, maxv;
     cv::minMaxLoc(depths, &minv, &maxv);

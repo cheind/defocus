@@ -73,7 +73,7 @@ namespace defocus {
         // Setup initial inverse depths
         std::vector<double> idepths(nObservationsPerCamera);
         std::default_random_engine gen;
-        std::uniform_real_distribution<double> dist(0.1, 1.5);
+        std::uniform_real_distribution<double> dist(1.0 / 4.0, 1.0 / 2.0);
         std::generate(idepths.begin(), idepths.end(), [&] () { return dist(gen); });
         
         // Setup NLLS
