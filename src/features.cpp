@@ -105,16 +105,6 @@ namespace defocus {
         targetLocs = klt.location();
         status = klt.status();
     }
-    
-    std::vector<cv::Point2f> eliminateInvalidFeatures(const std::vector<cv::Point2f> &locs, const std::vector<uchar> &status)
-    {
-        std::vector<cv::Point2f> r;
-        for (size_t i = 0; i < locs.size(); ++i) {
-            if (status[i])
-                r.push_back(locs[i]);
-        }
-        return r;
-    }
 
     
     

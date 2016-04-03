@@ -27,10 +27,7 @@ namespace defocus {
                        std::vector<cv::Point2f> &targetLocs,
                        std::vector<uchar> &status,
                        double maxError = 5);
-    
-    /** Remove features without a valid status */
-    std::vector<cv::Point2f> eliminateInvalidFeatures(const std::vector<cv::Point2f> &locs, const std::vector<uchar> &status);
-    
+
     
     template<class T>
     void removeByStatus(std::vector<T> &v, const std::vector<uchar> &status) {
