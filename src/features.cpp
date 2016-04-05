@@ -11,30 +11,19 @@
 #include <defocus/features.h>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/video/video.hpp>
+#include <opencv2/features2d/features2d.hpp>
 
 
 namespace defocus {
     
     void findFeatureInImage(cv::Mat &gray, std::vector<cv::Point2f> &corners) {
-        double qualityLevel = 0.01;
-        double minDistance = 5;
-        int blockSize = 5;
-        bool useHarrisDetector = false;
-        double k = 0.04;
-        int maxCorners = 4000;
-        
-        cv::goodFeaturesToTrack(gray,
-                                corners,
-                                maxCorners,
-                                qualityLevel,
-                                minDistance,
-                                cv::Mat(),
-                                blockSize,
-                                useHarrisDetector,
-                                k);
-        
-        cv::TermCriteria termcrit(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS, 20, 0.03);
-        cv::cornerSubPix(gray, corners, cv::Size(10,10), cv::Size(-1,-1), termcrit);
+        std::vector<cv::KeyPoint> keys;
+        cv::FAST(gray, keys, 20, true);
+
+        corners.clear();
+        for (size_t i = 0; i < keys.size(); ++i) {
+                corners.push_back(keys[i].pt);
+        }
     }
     
     class KLT {
