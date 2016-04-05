@@ -8,7 +8,7 @@
  of the BSD license.See the LICENSE file for details.
  */
 
-#include <defocus/sfm.h>
+#include <defocus/sparse.h>
 #include <random>
 
 #ifdef _WIN32
@@ -72,7 +72,8 @@ namespace defocus {
         
         // Setup initial inverse depths
         std::vector<double> idepths(nObservationsPerCamera);
-        std::default_random_engine gen;
+        std::random_device rd;
+        std::default_random_engine gen(rd());
         std::uniform_real_distribution<double> dist(1.0 / 4.0, 1.0 / 2.0);
         std::generate(idepths.begin(), idepths.end(), [&] () { return dist(gen); });
         
@@ -94,7 +95,7 @@ namespace defocus {
                 ceres::LossFunction *loss_function = new ceres::HuberLoss(1.0);
                 
                 problem.AddResidualBlock(cost_function,
-                                         loss_function,
+                                         NULL,
                                          cameraParameters.col(c).data(),
                                          &idepths.at(o));
                 

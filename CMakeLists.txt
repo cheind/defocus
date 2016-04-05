@@ -27,10 +27,12 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR} ${DEFOCUS_EIGEN_DIR} "inc")
 add_library(defocus
     inc/defocus/features.h
     inc/defocus/camera.h
-    inc/defocus/sfm.h
+    inc/defocus/sparse.h
+    inc/defocus/io.h
     src/features.cpp
     src/camera.cpp
-    src/sfm.cpp
+    src/sparse.cpp
+    src/io.cpp
 )
 
 add_executable(defocus_tests
@@ -43,3 +45,8 @@ add_executable(defocus_example
     examples/defocus_example.cpp
 )
 target_link_libraries(defocus_example defocus ${DEFOCUS_LINK_TARGETS})
+
+add_executable(defocus_statistics
+    examples/defocus_statistics.cpp
+)
+target_link_libraries(defocus_statistics defocus ${DEFOCUS_LINK_TARGETS})

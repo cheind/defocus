@@ -10,7 +10,8 @@
 
 #include <defocus/features.h>
 #include <defocus/camera.h>
-#include <defocus/sfm.h>
+#include <defocus/sparse.h>
+#include <defocus/io.h>
 #include <random>
 #include <iostream>
 
@@ -20,35 +21,6 @@
 
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
-
-
-
-void writePly(const char *path, const Eigen::MatrixXd &points, const Eigen::MatrixXd &colors) {
-    std::ofstream ofs(path);
-    
-    ofs
-        << "ply" << std::endl
-        << "format ascii 1.0" << std::endl
-        << "element vertex " << points.cols() << std::endl
-        << "property float x" << std::endl
-        << "property float y" << std::endl
-        << "property float z" << std::endl
-        << "property uchar red" << std::endl
-        << "property uchar green" << std::endl
-        << "property uchar blue" << std::endl
-        << "end_header" << std::endl;
-    
-    
-    for (Eigen::DenseIndex i = 0; i < points.cols(); ++i) {
-        
-        Eigen::Vector3d x = points.col(i);
-        Eigen::Vector3d c = colors.col(i);
-        
-        ofs << x(0) << " " << x(1) << " " << x(2) << " " << (int)c(0) << " " << (int)c(1) << " " << (int)c(2) << std::endl;
-    }
-    
-    ofs.close();
-}
 
 
 const int neighbors3x3[] = {
@@ -166,7 +138,33 @@ void dense(cv::Mat &depths, cv::Mat &colors) {
             depths.at<double>(y, x) = result(idx, 0);
         }
     }
+}
 
+typedef std::vector<cv::Point2f> OpenCVFeatures;
+typedef std::vector< OpenCVFeatures > OpenCVFeaturesPerFrame;
+
+void plotFeatureMovements(const OpenCVFeaturesPerFrame &f) {
+    std::ofstream ofs("featuremovements.csv");
+
+    std::vector< std::vector<double> > movements(f[0].size());
+
+    // For each feature
+    for (size_t i = 0; i < f[0].size(); ++i) {
+        cv::Vec2f ref = f[0][i];
+
+        // In each frame
+        for (size_t j = 1; j < f.size(); ++j) {
+            cv::Vec2f t = f[j][i];
+            movements[i].push_back(sqrt((ref - t).dot((ref - t))));
+        }
+    }
+
+    for (size_t i = 0; i < movements.size(); ++i) {
+        for (size_t j = 0; j < movements[i].size(); ++j) {
+            ofs << movements[i][j] << " ";
+        }
+        ofs << std::endl;
+    }
 }
 
 int main(int argc, char **argv) {
@@ -187,18 +185,10 @@ int main(int argc, char **argv) {
     // Taken from http://yf.io/p/tiny/
     // Use 8point_defocus.exe "stream\stone6_still_%04d.png"
     
-    /*
     Eigen::Matrix3d k;
     k <<
-        1781.0, 0.0, 960.0,
-        0.0, 1781.0, 540.0,
-        0.0, 0.0, 1.0;
-
-     */
-    Eigen::Matrix3d k;
-    k <<
-    1781.0 / 2, 0.0, 960.0 / 2,
-    0.0, 1781.0 / 2, 540.0 / 2,
+    1781.0, 0.0, 960.0,
+    0.0, 1781.0, 540.0,
     0.0, 0.0, 1.0;
     
     Eigen::Matrix3d invk = k.inverse();
@@ -208,13 +198,8 @@ int main(int argc, char **argv) {
     cv::Mat ref, refF, refGray, refLab, gray;
     vc >> ref;
     
-    cv::resize(ref, ref, cv::Size(), 0.5, 0.5);
     cv::cvtColor(ref, refGray, CV_BGR2GRAY);
-    
-    typedef std::vector<cv::Point2f> OpenCVFeatures;
-
-    
-    std::vector< OpenCVFeatures > featuresPerFrame;
+    OpenCVFeaturesPerFrame featuresPerFrame;
     
     std::vector<cv::Point2f> corners;
     defocus::findFeatureInImage(refGray, corners);
@@ -224,7 +209,6 @@ int main(int argc, char **argv) {
     cv::Mat f;
     while (vc.grab()) {
         vc.retrieve(f);
-        cv::resize(f, f, cv::Size(), 0.5, 0.5);
         cv::cvtColor(f, gray, CV_BGR2GRAY);
 
         std::vector<cv::Point2f> loc;
@@ -244,29 +228,30 @@ int main(int argc, char **argv) {
         cv::waitKey(10);
     }
     
+    bool anyDepthNegative = false;
+    Eigen::Matrix<double, 6, Eigen::Dynamic> cameras;
+    Eigen::Matrix<double, 3, Eigen::Dynamic> points3d;
+    const Eigen::DenseIndex nFrames = featuresPerFrame.size();
+    Eigen::DenseIndex nObs = featuresPerFrame[0].size();
+
     for (Eigen::DenseIndex c = 0; c < featuresPerFrame.size(); ++c) {
         defocus::removeByStatus(featuresPerFrame[c], status);
     }
-    
-    const Eigen::DenseIndex nFrames = featuresPerFrame.size();
-    const Eigen::DenseIndex nObs = featuresPerFrame[0].size();
-    
+    nObs = featuresPerFrame[0].size();
+
+    plotFeatureMovements(featuresPerFrame);
+
     Eigen::Matrix<double, 3, Eigen::Dynamic> retinaPoints(3, nFrames * nObs);
-    
     for (Eigen::DenseIndex c = 0; c < nFrames; ++c) {
-    
         const OpenCVFeatures &f = featuresPerFrame[c];
-    
         for (Eigen::DenseIndex o = 0; o < nObs; ++o) {
             retinaPoints.col(c * nObs + o) = defocus::pixelToRetina(f[o].x, f[o].y, invk);
         }
     }
-    
-    Eigen::Matrix<double, 6, Eigen::Dynamic> cameras;
-    Eigen::Matrix<double, 3, Eigen::Dynamic> points3d;
-    double err = defocus::solveSmallMotionBundleAdjustment(retinaPoints, cameras, points3d, nFrames, nObs);
-    
-    
+
+    defocus::solveSmallMotionBundleAdjustment(retinaPoints, cameras, points3d, nFrames, nObs);
+
+        
     Eigen::MatrixXd colors(3, points3d.cols());
     cv::Mat depths(ref.size(), CV_64FC1);
     depths.setTo(0);
@@ -281,8 +266,8 @@ int main(int argc, char **argv) {
             
         depths.at<double>(f) = points3d.col(i).z();
     }
-    writePly("points.ply", points3d, colors);
-
+    defocus::writePointsAndColorsAsPLY("sparse.ply", points3d, colors);
+    
     dense(depths, ref);
 
     double minv, maxv;
