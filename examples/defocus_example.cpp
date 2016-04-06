@@ -165,8 +165,6 @@ int main(int argc, char **argv) {
     1781.0, 0.0, 960.0,
     0.0, 1781.0, 540.0,
     0.0, 0.0, 1.0;
-    
-    Eigen::Matrix3d invk = k.inverse();
 
 
     // Detect trackable features in reference frame
@@ -182,8 +180,7 @@ int main(int argc, char **argv) {
         vc.retrieve(f);
 
         defocus::SmallMotionTracker::CVFrameResult r = tracker.addFrame(f);
-
-        int count = 0;
+        
         for (size_t i = 0; i < r.second.size(); ++i) {
             if (r.second[i]) {
                 cv::circle(f, r.first[i], 2, cv::Scalar(0, 255, 0));
@@ -219,7 +216,7 @@ int main(int argc, char **argv) {
     std::cout << depths.topRows(5) << std::endl;
     std::cout << features.topRows(2).leftCols(5) << std::endl;
     
-    Eigen::Matrix3Xd points3d = defocus::PinholeCamera::reconstruct(features.topRows(2), depths, k);
+    Eigen::Matrix3Xd points3d = defocus::PinholeCamera::reconstructPoints(features.topRows(2), depths, k);
     std::cout << points3d.leftCols(5) << std::endl;
 
     Eigen::MatrixXd colors(3, points3d.cols());

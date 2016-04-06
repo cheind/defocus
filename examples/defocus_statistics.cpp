@@ -82,15 +82,13 @@ int main(int argc, char **argv) {
         1781.0, 0.0, 960.0,
         0.0, 1781.0, 540.0,
         0.0, 0.0, 1.0;
-    
-    Eigen::Matrix3d invk = k.inverse();
 
     // Detect trackable features in reference frame
     cv::Mat ref;
     vc >> ref;
     
     defocus::SmallMotionTracker tracker;
-    tracker.setMaxError(5.0);
+    tracker.setMaxError(10.0);
     tracker.initializeFromReferenceFrame(ref);
 
     cv::Mat f;
@@ -99,7 +97,6 @@ int main(int argc, char **argv) {
 
         defocus::SmallMotionTracker::CVFrameResult r = tracker.addFrame(f);
 
-        int count = 0;
         for (size_t i = 0; i < r.second.size(); ++i) {
             if (r.second[i]) {
                 cv::circle(f, r.first[i], 2, cv::Scalar(0, 255, 0));

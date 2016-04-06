@@ -37,7 +37,8 @@ add_library(defocus
 
 add_executable(defocus_tests
     tests/catch.hpp
-    tests/test_sfm.cpp
+    tests/test_helpers.h
+    tests/test_sparse.cpp
 )
 target_link_libraries(defocus_tests defocus ${DEFOCUS_LINK_TARGETS})
 

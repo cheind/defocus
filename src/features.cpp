@@ -104,6 +104,10 @@ namespace defocus {
         for (size_t i = 0; i < keys.size(); ++i) {
             _features[0].push_back(keys[i].pt);
         }
+        
+        //cv::TermCriteria termcrit(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS, 20, 0.03);
+        //cv::cornerSubPix(_refGray, _features[0], cv::Size(10,10), cv::Size(-1,-1), termcrit);
+        
         _status.clear();
         _status.resize(_features[0].size(), 1);
 
