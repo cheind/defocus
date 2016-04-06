@@ -12,20 +12,11 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/video/video.hpp>
 #include <opencv2/features2d/features2d.hpp>
+#include <iostream>
 
 
 namespace defocus {
-    
-    void findFeatureInImage(cv::Mat &gray, std::vector<cv::Point2f> &corners) {
-        std::vector<cv::KeyPoint> keys;
-        cv::FAST(gray, keys, 20, true);
-
-        corners.clear();
-        for (size_t i = 0; i < keys.size(); ++i) {
-                corners.push_back(keys[i].pt);
-        }
-    }
-    
+       
     class KLT {
     public:
         
@@ -82,20 +73,97 @@ namespace defocus {
     };
 
     
-    void trackFeatures(const cv::Mat &refGray,
-                       const std::vector<cv::Point2f> &refLocs,
-                       const cv::Mat &targetGray,
-                       std::vector<cv::Point2f> &targetLocs,
-                       std::vector<uchar> &status,
-                       double maxError)
+    
+    
+    SmallMotionTracker::SmallMotionTracker()
+        :_maxError(5.0), _tracker(0)
     {
-        KLT klt(refGray, refLocs, status, maxError);
-        klt.update(targetGray);
-        targetLocs = klt.location();
-        status = klt.status();
     }
 
-    
-    
-    
+    SmallMotionTracker::~SmallMotionTracker()
+    {
+        if (_tracker)
+            delete _tracker;
+    }
+
+    void SmallMotionTracker::setMaxError(double error)
+    {
+        _maxError = error;
+    }
+
+    void SmallMotionTracker::initializeFromReferenceFrame(const cv::Mat & bgr)
+    {
+        cv::cvtColor(bgr, _refGray, CV_BGR2GRAY);
+
+        _features.resize(1);
+
+        std::vector<cv::KeyPoint> keys;
+        cv::FAST(_refGray, keys, 35, true);
+
+        _features[0].clear();
+        for (size_t i = 0; i < keys.size(); ++i) {
+            _features[0].push_back(keys[i].pt);
+        }
+        _status.clear();
+        _status.resize(_features[0].size(), 1);
+
+        if (_tracker)
+            delete _tracker;
+
+        _tracker = new KLT(_refGray, _features[0], _status, _maxError);
+    }
+
+    SmallMotionTracker::CVFrameResult SmallMotionTracker::addFrame(const cv::Mat & bgr)
+    {
+        cv::Mat gray;
+        cv::cvtColor(bgr, gray, CV_BGR2GRAY);
+
+        _tracker->update(gray);
+        _features.push_back(_tracker->location());      
+
+        return std::make_pair(_tracker->location(), _tracker->status());
+    }
+
+    template<class T>
+    void removeByStatus(std::vector<T> &v, const std::vector<uchar> &status) {
+        size_t i, k;
+        for (i = k = 0; i < v.size(); i++) {
+            if (!status[i])
+                continue;
+
+            std::swap(v[k++], v[i]);
+        }
+        v.resize(k);
+    }
+
+    Eigen::MatrixXd SmallMotionTracker::trackedFeaturesPerFrame() const
+    {
+        eigen_assert(_tracker != 0);
+        eigen_assert(_features.size() > 0);
+
+        CVFeatureLocationsPerFrame fcopy = _features;
+
+        std::vector<uchar> status = _tracker->status();
+        std::cout << "before " << fcopy[0].size();
+        for (size_t c = 0; c < fcopy.size(); ++c) {
+            removeByStatus(fcopy[c], status);
+        }
+        std::cout << "after " << fcopy[0].size();
+
+        Eigen::DenseIndex nFrames = fcopy.size();
+        Eigen::DenseIndex nObs = fcopy[0].size();
+
+        Eigen::MatrixXd features(nFrames * 2, nObs);
+
+        for (Eigen::DenseIndex f = 0; f < nFrames; ++f) {   
+            const CVFeatureLocations &l = fcopy[f];
+            for (Eigen::DenseIndex o = 0; o < nObs; ++o) {
+                features(f*2 + 0, o) = l[o].x;
+                features(f*2 + 1, o) = l[o].y;
+            }
+        }
+
+        return features;
+    }
+
 }

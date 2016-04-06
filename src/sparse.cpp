@@ -9,6 +9,7 @@
  */
 
 #include <defocus/sparse.h>
+#include <defocus/camera.h>
 #include <random>
 
 #ifdef _WIN32
@@ -129,4 +130,122 @@ namespace defocus {
     
     
     
+    void SparseSmallMotionBundleAdjustment::setFeatures(const Eigen::MatrixXd & features)
+    {
+        _features = features;
+    }
+
+    void SparseSmallMotionBundleAdjustment::setInitialDepths(const Eigen::VectorXd & depths)
+    {
+        _depths = depths;
+    }
+
+    void SparseSmallMotionBundleAdjustment::setInitialCameraParameters(const Eigen::Matrix<double, 6, Eigen::Dynamic>& params)
+    {
+        _cameras = params;
+    }
+
+    void SparseSmallMotionBundleAdjustment::setCameraMatrix(const Eigen::Matrix3d & k)
+    {
+        _intr = k;
+    }
+
+    double SparseSmallMotionBundleAdjustment::solve()
+    {
+        Eigen::DenseIndex nFrames = _features.rows() / 2;
+        Eigen::DenseIndex nObs = _features.cols();
+
+        eigen_assert(nFrames > 2);
+        eigen_assert(_cameras.cols() == nFrames);
+        eigen_assert(_depths.cols() == nObs);
+        
+        Eigen::Matrix3d kinv = _intr.inverse();
+        Eigen::Matrix3Xd retinaPoints(3, nFrames * nObs);
+
+        for (Eigen::DenseIndex c = 0; c < nFrames; ++c) {
+            for (Eigen::DenseIndex o = 0; o < nObs; ++o) {
+                retinaPoints.col(c * nObs + o) = PinholeCamera::pixelToRetina(_features(c * 2 + 0, o), _features(c * 2 + 1, o), kinv);
+            }
+        }
+
+        // Represent depths as inverse depth
+        Eigen::VectorXd idepths = _depths.cwiseInverse();
+        
+        // Setup NLLS
+        ceres::Problem problem;
+
+        // For each camera (except the reference camera)
+        for (Eigen::DenseIndex c = 1; c < nFrames; ++c) {
+
+            // For each observation
+            for (Eigen::DenseIndex o = 0; o < nObs; ++o) {
+
+                // Add a residual block
+                Eigen::DenseIndex idx = c * nObs + o;
+                Eigen::DenseIndex idxInRef = o;
+
+                ceres::CostFunction *cost_function = ReprojectionError::Create(retinaPoints.col(idx).data(), retinaPoints.col(idxInRef).data());
+
+                problem.AddResidualBlock(cost_function,
+                    NULL,
+                    _cameras.col(c).data(),
+                    &idepths(o)
+               );
+
+            }
+        }
+
+        // Solve
+
+        ceres::Solver::Options options;
+        options.linear_solver_type = ceres::DENSE_SCHUR;
+        options.max_num_iterations = 20;
+        options.minimizer_progress_to_stdout = true;
+
+        ceres::Solver::Summary summary;
+        ceres::Solve(options, &problem, &summary);
+        std::cout << summary.FullReport() << std::endl;
+
+        // Convert from inverse depth representation
+        _depths = idepths.cwiseInverse();
+
+        return summary.final_cost;
+    }
+
+    const Eigen::VectorXd & SparseSmallMotionBundleAdjustment::depths() const
+    {
+        return _depths;
+    }
+
+    const Eigen::Matrix<double, 6, Eigen::Dynamic>& SparseSmallMotionBundleAdjustment::cameraParameters() const
+    {
+        return _cameras;
+    }
+
+    Eigen::VectorXd InitialConditions::uniformRandomDepths(double minDepth, double maxDepth, Eigen::DenseIndex nObservations)
+    {
+        Eigen::VectorXd depths(nObservations);
+
+        std::random_device rd;
+        std::default_random_engine gen(rd());
+        std::uniform_real_distribution<double> dist(minDepth, maxDepth);
+
+        for (Eigen::DenseIndex i = 0; i < nObservations; ++i)
+            depths(i) = dist(gen);
+        
+        return depths;
+    }
+
+    Eigen::VectorXd InitialConditions::constantDepths(double depth, Eigen::DenseIndex nObservations)
+    {
+        return Eigen::VectorXd::Constant(nObservations, depth);
+    }
+
+    Eigen::Matrix<double, 6, Eigen::Dynamic> InitialConditions::identityCameraParameters(Eigen::DenseIndex nCameras)
+    {
+        Eigen::Matrix<double, 6, Eigen::Dynamic> cameraParameters(6, nCameras);
+        cameraParameters.setZero();
+        return cameraParameters;
+    }
+
 }

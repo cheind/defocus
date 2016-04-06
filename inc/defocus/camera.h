@@ -15,10 +15,12 @@
 #include <Eigen/Core>
 
 namespace defocus {
-    
-    /** Convert from pixel coordinates to coordinates on the retina plane (z=1). */
-    Eigen::Vector3d pixelToRetina(double x, double y, const Eigen::Matrix3d &kInverse);
-    
+
+    class PinholeCamera {
+    public:
+        static Eigen::Vector3d pixelToRetina(double x, double y, const Eigen::Matrix3d &kInverse);
+        static Eigen::Matrix3Xd reconstruct(Eigen::Ref<const Eigen::Matrix2Xd> f, const Eigen::VectorXd &depths, const Eigen::MatrixXd &k);
+    };
 }
 
 #endif

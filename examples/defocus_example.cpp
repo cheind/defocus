@@ -140,32 +140,7 @@ void dense(cv::Mat &depths, cv::Mat &colors) {
     }
 }
 
-typedef std::vector<cv::Point2f> OpenCVFeatures;
-typedef std::vector< OpenCVFeatures > OpenCVFeaturesPerFrame;
 
-void plotFeatureMovements(const OpenCVFeaturesPerFrame &f) {
-    std::ofstream ofs("featuremovements.csv");
-
-    std::vector< std::vector<double> > movements(f[0].size());
-
-    // For each feature
-    for (size_t i = 0; i < f[0].size(); ++i) {
-        cv::Vec2f ref = f[0][i];
-
-        // In each frame
-        for (size_t j = 1; j < f.size(); ++j) {
-            cv::Vec2f t = f[j][i];
-            movements[i].push_back(sqrt((ref - t).dot((ref - t))));
-        }
-    }
-
-    for (size_t i = 0; i < movements.size(); ++i) {
-        for (size_t j = 0; j < movements[i].size(); ++j) {
-            ofs << movements[i][j] << " ";
-        }
-        ofs << std::endl;
-    }
-}
 
 int main(int argc, char **argv) {
 
@@ -195,79 +170,75 @@ int main(int argc, char **argv) {
 
 
     // Detect trackable features in reference frame
-    cv::Mat ref, refF, refGray, refLab, gray;
+    cv::Mat ref;
     vc >> ref;
     
-    cv::cvtColor(ref, refGray, CV_BGR2GRAY);
-    OpenCVFeaturesPerFrame featuresPerFrame;
+    defocus::SmallMotionTracker tracker;
+    tracker.setMaxError(5.0);
+    tracker.initializeFromReferenceFrame(ref);
     
-    std::vector<cv::Point2f> corners;
-    defocus::findFeatureInImage(refGray, corners);
-    std::vector<uchar> status(corners.size(), 1);
-    featuresPerFrame.push_back(corners);
-
     cv::Mat f;
     while (vc.grab()) {
         vc.retrieve(f);
-        cv::cvtColor(f, gray, CV_BGR2GRAY);
 
-        std::vector<cv::Point2f> loc;
+        defocus::SmallMotionTracker::CVFrameResult r = tracker.addFrame(f);
 
-        defocus::trackFeatures(refGray, corners, gray, loc, status, 5);
-        featuresPerFrame.push_back(loc);
-        
-        for (size_t i = 0; i < status.size(); ++i) {
-            if (status[i]) {
-                cv::circle(f, loc[i], 2, cv::Scalar(0, 255, 0));
+        int count = 0;
+        for (size_t i = 0; i < r.second.size(); ++i) {
+            if (r.second[i]) {
+                cv::circle(f, r.first[i], 2, cv::Scalar(0, 255, 0));
             }
         }
-        
+
         cv::Mat tmp;
         cv::resize(f, tmp, cv::Size(), 0.5, 0.5);
         cv::imshow("track", tmp);
         cv::waitKey(10);
     }
+
+    Eigen::MatrixXd features = tracker.trackedFeaturesPerFrame();
     
-    bool anyDepthNegative = false;
     Eigen::Matrix<double, 6, Eigen::Dynamic> cameras;
-    Eigen::Matrix<double, 3, Eigen::Dynamic> points3d;
-    const Eigen::DenseIndex nFrames = featuresPerFrame.size();
-    Eigen::DenseIndex nObs = featuresPerFrame[0].size();
+    Eigen::VectorXd depths;
 
-    for (Eigen::DenseIndex c = 0; c < featuresPerFrame.size(); ++c) {
-        defocus::removeByStatus(featuresPerFrame[c], status);
-    }
-    nObs = featuresPerFrame[0].size();
+    cameras = defocus::InitialConditions::identityCameraParameters(features.rows() / 2);
+    depths = defocus::InitialConditions::uniformRandomDepths(1.0, 2.0, features.cols());
 
-    plotFeatureMovements(featuresPerFrame);
+    std::cout << cameras << std::endl;
 
-    Eigen::Matrix<double, 3, Eigen::Dynamic> retinaPoints(3, nFrames * nObs);
-    for (Eigen::DenseIndex c = 0; c < nFrames; ++c) {
-        const OpenCVFeatures &f = featuresPerFrame[c];
-        for (Eigen::DenseIndex o = 0; o < nObs; ++o) {
-            retinaPoints.col(c * nObs + o) = defocus::pixelToRetina(f[o].x, f[o].y, invk);
-        }
-    }
+    defocus::SparseSmallMotionBundleAdjustment ba;
+    ba.setCameraMatrix(k);
+    ba.setFeatures(features);
+    ba.setInitialCameraParameters(cameras);
+    ba.setInitialDepths(depths);
+    ba.solve();
 
-    defocus::solveSmallMotionBundleAdjustment(retinaPoints, cameras, points3d, nFrames, nObs);
+    cameras = ba.cameraParameters();
+    depths = ba.depths();
 
-        
-    Eigen::MatrixXd colors(3, points3d.cols());
-    cv::Mat depths(ref.size(), CV_64FC1);
-    depths.setTo(0);
-
-    for (Eigen::DenseIndex i = 0; i < nObs; ++i) {
+    std::cout << depths.topRows(5) << std::endl;
+    std::cout << features.topRows(2).leftCols(5) << std::endl;
     
-        cv::Point2f f = featuresPerFrame[0][i];
+    Eigen::Matrix3Xd points3d = defocus::PinholeCamera::reconstruct(features.topRows(2), depths, k);
+    std::cout << points3d.leftCols(5) << std::endl;
+
+    Eigen::MatrixXd colors(3, points3d.cols());
+    cv::Mat depthmap(ref.size(), CV_64FC1);
+    depthmap.setTo(0);
+
+    for (Eigen::DenseIndex i = 0; i < points3d.cols(); ++i) {
+    
+        cv::Point2f f((float)features(0, i), (float)features(1, i));
         cv::Vec3b c = ref.at<cv::Vec3b>(f);
         colors(0, i) = c(2);
         colors(1, i) = c(1);
         colors(2, i) = c(0);
             
-        depths.at<double>(f) = points3d.col(i).z();
+        depthmap.at<double>(f) = points3d.col(i).z();
     }
     defocus::writePointsAndColorsAsPLY("sparse.ply", points3d, colors);
     
+    /*
     dense(depths, ref);
 
     double minv, maxv;
@@ -278,5 +249,5 @@ int main(int argc, char **argv) {
     cv::resize(tmp, tmp, cv::Size(), 0.5, 0.5);
     cv::imshow("dense", tmp);
     cv::waitKey();
-
+    */
 }
