@@ -41,7 +41,9 @@ namespace defocus {
     Eigen::Matrix3Xd PinholeCamera::perspectiveProject(Eigen::Ref<const Eigen::Matrix3Xd> points, const Eigen::Matrix<double, 3, 4>  &pose, const Eigen::Matrix3d &k)
     {
         Eigen::AffineCompact3d t(pose);
-        return k * t.inverse(Eigen::Isometry).matrix() * points.colwise().homogeneous();
+        Eigen::Matrix<double, 3, 4> p = k * t.inverse(Eigen::Isometry).matrix();
+
+        return p * points.colwise().homogeneous();
     }
     
     Eigen::Matrix<double, 3, 4> PinholeCamera::smallMotionCameraParameterVectorToMatrix(Eigen::Ref<const Eigen::Matrix<double, 6, 1> > v)

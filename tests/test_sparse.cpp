@@ -21,7 +21,7 @@ TEST_CASE("test_bundleadjustment")
     const double foc = 530.0;
     const int width = 640;
     const int height = 480;
-    const Eigen::DenseIndex nObs = 50;
+    const Eigen::DenseIndex nObs = 10;
     const Eigen::DenseIndex nFrames = 50;
     
     Eigen::Matrix3d k;
@@ -42,10 +42,7 @@ TEST_CASE("test_bundleadjustment")
     cameraParameters.col(0).setZero();
     for (Eigen::DenseIndex i = 1; i < nFrames; ++i) {
         poses[i] = defocus::testhelper::uniformRandomPose();
-        
-        std::cout << poses[i] << std::endl;
         cameraParameters.col(i) = defocus::PinholeCamera::smallMotionCameraMatrixToParameterVector(poses[i]);
-        std::cout << cameraParameters.col(i).transpose() << std::endl;
     }
     
     // Project points with respect to camera motion
@@ -56,12 +53,28 @@ TEST_CASE("test_bundleadjustment")
         features.row(i*2+1) = proj.row(1);
     }
 
+    double reprojerror2 = 0.0;
+
+    for (Eigen::DenseIndex f = 0; f < nFrames; ++f) {
+        auto observed = features.block(f * 2, 0, 2, nObs);
+        auto m = defocus::PinholeCamera::smallMotionCameraParameterVectorToMatrix(cameraParameters.col(f));
+        Eigen::Matrix2Xd proj = defocus::PinholeCamera::perspectiveProject(points, m, k).colwise().hnormalized();       
+
+        reprojerror2 += (observed - proj).colwise().squaredNorm().sum();
+    }
+
+    std::cout << reprojerror2 << std::endl;
+
+
     defocus::SparseSmallMotionBundleAdjustment ba;
     ba.setCameraMatrix(k);
     ba.setFeatures(features);
     ba.setInitialCameraParameters(cameraParameters);
     ba.setInitialDepths(points.row(2));
     ba.solve();
+
+    std::cout << points.row(2) << std::endl;
+    std::cout << ba.depths() << std::endl;
     
     
     
