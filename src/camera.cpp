@@ -14,11 +14,6 @@
 
 namespace defocus {
     
-    Eigen::Vector3d pixelToRetina(double x, double y, const Eigen::Matrix3d &kInverse) {
-        Eigen::Vector3d p(x, y, 1.0);
-        return kInverse * p;
-    }
-    
     Eigen::Vector3d PinholeCamera::pixelToRetina(double x, double y, const Eigen::Matrix3d & kInverse)
     {
         Eigen::Vector3d p(x, y, 1.0);
