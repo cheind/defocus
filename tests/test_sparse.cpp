@@ -16,13 +16,43 @@
 
 #include "test_helpers.h"
 
+struct SmallMotionEuclideanReprojectionErrorF {
+    SmallMotionEuclideanReprojectionErrorF(const double *no, const double *np)
+    : _no(no), _np(np)
+    {}
+    
+    template <typename T>
+    bool operator()(
+                    const T* const camera,
+                    const T* const depth,
+                    T* residuals) const
+    {
+        T p[3] = {T(_np[0]) / depth[0], T(_np[1]) / depth[0], T(1.0) / depth[0] };
+        
+        T rpt[3] = {
+            p[0] - camera[2] * p[1] + camera[1] * p[2] + camera[3],
+            p[0] * camera[2] + p[1] - camera[0] * p[2] + camera[4],
+            -p[0] * camera[1] + p[1] * camera[0] + p[2] + camera[5]
+        };
+        
+        residuals[0] = rpt[0] / rpt[2] - T(_no[0]) ;
+        residuals[1] = rpt[1] / rpt[2] - T(_no[1]) ;
+        
+        return true;
+    }
+    
+    const double *_no;
+    const double *_np;
+};
+
+
 TEST_CASE("test_bundleadjustment")
 {
     const double foc = 530.0;
     const int width = 640;
     const int height = 480;
-    const Eigen::DenseIndex nObs = 10;
-    const Eigen::DenseIndex nFrames = 50;
+    const Eigen::DenseIndex nObs = 50;
+    const Eigen::DenseIndex nFrames = 10;
     
     Eigen::Matrix3d k;
     k <<
@@ -53,29 +83,16 @@ TEST_CASE("test_bundleadjustment")
         features.row(i*2+1) = proj.row(1);
     }
 
-    double reprojerror2 = 0.0;
-
-    for (Eigen::DenseIndex f = 0; f < nFrames; ++f) {
-        auto observed = features.block(f * 2, 0, 2, nObs);
-        auto m = defocus::PinholeCamera::smallMotionCameraParameterVectorToMatrix(cameraParameters.col(f));
-        Eigen::Matrix2Xd proj = defocus::PinholeCamera::perspectiveProject(points, m, k).colwise().hnormalized();       
-
-        reprojerror2 += (observed - proj).colwise().squaredNorm().sum();
-    }
-
-    std::cout << reprojerror2 << std::endl;
-
-
+    // Solve bunde adjustment starting with ideal initial solution.
     defocus::SparseSmallMotionBundleAdjustment ba;
     ba.setCameraMatrix(k);
     ba.setFeatures(features);
     ba.setInitialCameraParameters(cameraParameters);
     ba.setInitialDepths(points.row(2));
     ba.solve();
-
-    std::cout << points.row(2) << std::endl;
-    std::cout << ba.depths() << std::endl;
     
+    const double factor = points(2, 0) / ba.depths()(0);
+    Eigen::Matrix3Xd recPoints = defocus::PinholeCamera::reconstructPoints(features.block(0,0,2,nObs), (ba.depths() * factor), k);
     
-    
+    REQUIRE((recPoints - points).colwise().norm().maxCoeff() < 20.0);
 }

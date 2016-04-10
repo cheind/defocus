@@ -31,7 +31,7 @@ namespace defocus {
             std::random_device rd;
             std::default_random_engine e(rd());
             std::uniform_real_distribution<double> distTranslation(-3.0, 3.0);
-            std::uniform_real_distribution<double> distRotation(-0.01, 0.01);
+            std::uniform_real_distribution<double> distRotation(-0.005, 0.005);
             
             Eigen::AffineCompact3d t;
             t = Eigen::Translation3d(distTranslation(e), distTranslation(e), distTranslation(e)) *

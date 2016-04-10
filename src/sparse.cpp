@@ -38,7 +38,7 @@ namespace defocus {
                         const T* const depth,
                         T* residuals) const
         {
-            T p[3] = {T(_np[0]) / depth[0], T(_np[1]) / depth[0], T(1.0) / depth[0] };
+            T p[3] = {T(_np[0]) * depth[0], T(_np[1]) * depth[0], depth[0] };
             
             T rpt[3] = {
                 p[0] - camera[2] * p[1] + camera[1] * p[2] + camera[3],
@@ -99,9 +99,6 @@ namespace defocus {
                 retinaPoints.col(c * nObs + o) = PinholeCamera::pixelToRetina(_features(c * 2 + 0, o), _features(c * 2 + 1, o), kinv);
             }
         }
-
-        // Represent depths as inverse depth
-        Eigen::VectorXd idepths = _depths.cwiseInverse();
         
         // Setup NLLS
         ceres::Problem problem;
@@ -119,7 +116,7 @@ namespace defocus {
                 ceres::CostFunction *cost_function =
                     SmallMotionEuclideanReprojectionError::Create(retinaPoints.col(idx).data(), retinaPoints.col(idxInRef).data());
 
-                problem.AddResidualBlock(cost_function, NULL, _cameras.col(c).data(), &idepths(o));
+                problem.AddResidualBlock(cost_function, NULL, _cameras.col(c).data(), _depths.data() + o);
             }
         }
 
@@ -133,9 +130,6 @@ namespace defocus {
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
         std::cout << summary.FullReport() << std::endl;
-
-        // Convert from inverse depth representation
-        _depths = idepths.cwiseInverse();
 
         return summary.final_cost;
     }
