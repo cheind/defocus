@@ -20,14 +20,6 @@ namespace defocus {
     class KLT {
     public:
         
-        KLT(const cv::Mat &img, const std::vector<cv::Point2f> &initial, double maxError)
-        :_next(initial)
-        {
-            img.copyTo(_nextGray);
-            _nextStatus.resize(initial.size(), 1);
-            _maxError = maxError;
-        }
-        
         KLT(const cv::Mat &img, const std::vector<cv::Point2f> &initial, std::vector<uchar> &initialStatus, double maxError)
         : _next(initial), _nextStatus(initialStatus)
         {
@@ -47,7 +39,7 @@ namespace defocus {
             
             img.copyTo(_nextGray);
             cv::TermCriteria term(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 50, 0.001);
-            cv::calcOpticalFlowPyrLK(_prevGray, _nextGray, _prev, _next, _nextStatus, _err, cv::Size(21, 21), 3, term, 0, 0.001);
+            cv::calcOpticalFlowPyrLK(_prevGray, _nextGray, _prev, _next, _nextStatus, _err, cv::Size(21, 21), 5, term);
             
             for (size_t i = 0; i < _nextStatus.size(); ++i) {
                 _nextStatus[i] &= _prevStatus[i];
@@ -76,14 +68,12 @@ namespace defocus {
     
     
     SmallMotionTracker::SmallMotionTracker()
-        :_maxError(5.0), _tracker(0)
+        :_maxError(5.0)
     {
     }
 
     SmallMotionTracker::~SmallMotionTracker()
     {
-        if (_tracker)
-            delete _tracker;
     }
 
     void SmallMotionTracker::setMaxError(double error)
@@ -96,36 +86,56 @@ namespace defocus {
         cv::cvtColor(bgr, _refGray, CV_BGR2GRAY);
 
         _features.resize(1);
-
+        
+        /*
+        double qualityLevel = 0.01;
+        double minDistance = 5;
+        int blockSize = 5;
+        bool useHarrisDetector = false;
+        double k = 0.04;
+        int maxCorners = 4000;
+        
+        cv::goodFeaturesToTrack(_refGray,
+                                _features[0],
+                                maxCorners,
+                                qualityLevel,
+                                minDistance,
+                                cv::Mat(),
+                                blockSize,
+                                useHarrisDetector,
+                                k);
+        
+        cv::TermCriteria termcrit(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS,20,0.03);
+        cv::cornerSubPix(_refGray, _features[0], cv::Size(10,10), cv::Size(-1,-1), termcrit);
+*/
         std::vector<cv::KeyPoint> keys;
-        cv::FAST(_refGray, keys, 35, true);
+        cv::FAST(_refGray, keys, 25, true);
 
         _features[0].clear();
         for (size_t i = 0; i < keys.size(); ++i) {
             _features[0].push_back(keys[i].pt);
         }
         
-        //cv::TermCriteria termcrit(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS, 20, 0.03);
-        //cv::cornerSubPix(_refGray, _features[0], cv::Size(10,10), cv::Size(-1,-1), termcrit);
+        cv::TermCriteria termcrit(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS, 20, 0.03);
+        cv::cornerSubPix(_refGray, _features[0], cv::Size(10,10), cv::Size(-1,-1), termcrit);
+        
         
         _status.clear();
         _status.resize(_features[0].size(), 1);
-
-        if (_tracker)
-            delete _tracker;
-
-        _tracker = new KLT(_refGray, _features[0], _status, _maxError);
     }
 
     SmallMotionTracker::CVFrameResult SmallMotionTracker::addFrame(const cv::Mat & bgr)
     {
         cv::Mat gray;
         cv::cvtColor(bgr, gray, CV_BGR2GRAY);
+        
+        KLT klt(_refGray, _features[0], _status, _maxError);
+        klt.update(gray);
 
-        _tracker->update(gray);
-        _features.push_back(_tracker->location());      
+        _features.push_back(klt.location());
+        _status = klt.status();
 
-        return std::make_pair(_tracker->location(), _tracker->status());
+        return std::make_pair(klt.location(), klt.status());
     }
 
     template<class T>
@@ -147,12 +157,9 @@ namespace defocus {
 
         CVFeatureLocationsPerFrame fcopy = _features;
 
-        std::vector<uchar> status = _tracker->status();
-        std::cout << "before " << fcopy[0].size();
         for (size_t c = 0; c < fcopy.size(); ++c) {
-            removeByStatus(fcopy[c], status);
+            removeByStatus(fcopy[c], _status);
         }
-        std::cout << "after " << fcopy[0].size();
 
         Eigen::DenseIndex nFrames = fcopy.size();
         Eigen::DenseIndex nObs = fcopy[0].size();

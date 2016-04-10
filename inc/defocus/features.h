@@ -38,7 +38,6 @@ namespace defocus {
         std::vector<uchar> _status;
         double _maxError;
         cv::Mat _refGray;
-        KLT *_tracker;
     };
 
     
