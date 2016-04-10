@@ -194,14 +194,13 @@ int main(int argc, char **argv) {
     }
 
     Eigen::MatrixXd features = tracker.trackedFeaturesPerFrame();
+
     
     Eigen::Matrix<double, 6, Eigen::Dynamic> cameras;
     Eigen::VectorXd depths;
 
     cameras = defocus::InitialConditions::identityCameraParameters(features.rows() / 2);
-    depths = defocus::InitialConditions::uniformRandomDepths(1.0, 2.0, features.cols());
-
-    std::cout << cameras << std::endl;
+    depths = defocus::InitialConditions::uniformRandomDepths(0.5, 2.0, features.cols());
 
     defocus::SparseSmallMotionBundleAdjustment ba;
     ba.setCameraMatrix(k);
@@ -212,12 +211,8 @@ int main(int argc, char **argv) {
 
     cameras = ba.cameraParameters();
     depths = ba.depths();
-
-    std::cout << depths.topRows(5) << std::endl;
-    std::cout << features.topRows(2).leftCols(5) << std::endl;
     
     Eigen::Matrix3Xd points3d = defocus::PinholeCamera::reconstructPoints(features.topRows(2), depths, k);
-    std::cout << points3d.leftCols(5) << std::endl;
 
     Eigen::MatrixXd colors(3, points3d.cols());
     cv::Mat depthmap(ref.size(), CV_64FC1);
@@ -234,17 +229,4 @@ int main(int argc, char **argv) {
         depthmap.at<double>(f) = points3d.col(i).z();
     }
     defocus::writePointsAndColorsAsPLY("sparse.ply", points3d, colors);
-    
-    /*
-    dense(depths, ref);
-
-    double minv, maxv;
-    cv::minMaxLoc(depths, &minv, &maxv);
-
-    cv::Mat tmp;
-    depths.convertTo(tmp, CV_8U, 255.0 / (maxv - minv), -minv * 255.0 / (maxv - minv));
-    cv::resize(tmp, tmp, cv::Size(), 0.5, 0.5);
-    cv::imshow("dense", tmp);
-    cv::waitKey();
-    */
 }
