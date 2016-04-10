@@ -11,6 +11,7 @@
 #include <defocus/sparse.h>
 #include <defocus/camera.h>
 #include <random>
+#include <fstream>
 
 #ifdef _WIN32
 #define GOOGLE_GLOG_DLL_DECL
@@ -38,7 +39,25 @@ namespace defocus {
                         const T* const depth,
                         T* residuals) const
         {
-            T p[3] = {T(_np[0]) * depth[0], T(_np[1]) * depth[0], depth[0] };
+            
+            const T ax = T(_np[0]) - camera[2]*T(_np[1]) + camera[1];
+            const T bx = camera[3];
+            const T ay = T(_np[1]) - camera[0] + camera[2]*T(_np[0]);
+            const T by = camera[4];
+            const T c = -camera[1] * T(_np[0]) + camera[0] * T(_np[1]) + T(1.0);
+            const T d = camera[5];
+            const T ex = T(_no[0]) * c - ax;
+            const T fx = T(_no[0]) * d - bx;
+            const T ey = T(_no[1]) * c - ay;
+            const T fy = T(_no[1]) * d - by;
+            
+            
+            residuals[0] = (ex + fx * depth[0]) / (c + d * depth[0]);
+            residuals[1] = (ey + fy * depth[0]) / (c + d * depth[0]);
+
+            
+            /*
+            T p[3] = {T(_np[0]) / depth[0], T(_np[1]) / depth[0], 1.0 / depth[0] };
             
             T rpt[3] = {
                 p[0] - camera[2] * p[1] + camera[1] * p[2] + camera[3],
@@ -46,10 +65,12 @@ namespace defocus {
                 -p[0] * camera[1] + p[1] * camera[0] + p[2] + camera[5]
             };
             
-            residuals[0] = rpt[0] / rpt[2] - T(_no[0]) ;
-            residuals[1] = rpt[1] / rpt[2] - T(_no[1]) ;
+            residuals[0] = T(_no[0]) - rpt[0] / rpt[2];
+            residuals[1] = T(_no[1]) - rpt[1] / rpt[2];
             
+            */
             return true;
+            
         }
         
         static ceres::CostFunction* Create(const double *obs, const double *point)
@@ -100,6 +121,8 @@ namespace defocus {
             }
         }
         
+        Eigen::VectorXd idepths = _depths.cwiseInverse();
+        
         // Setup NLLS
         ceres::Problem problem;
 
@@ -116,20 +139,26 @@ namespace defocus {
                 ceres::CostFunction *cost_function =
                     SmallMotionEuclideanReprojectionError::Create(retinaPoints.col(idx).data(), retinaPoints.col(idxInRef).data());
 
-                problem.AddResidualBlock(cost_function, NULL, _cameras.col(c).data(), _depths.data() + o);
+                //ceres::LossFunction* loss_function = new ceres::HuberLoss(1.0);
+                
+                problem.AddResidualBlock(cost_function, NULL, _cameras.col(c).data(), idepths.data() + o);
             }
         }
 
         // Solve
 
         ceres::Solver::Options options;
-        options.linear_solver_type = ceres::DENSE_SCHUR;
-        options.max_num_iterations = 20;
+        options.use_nonmonotonic_steps = true;
+        options.preconditioner_type = ceres::SCHUR_JACOBI;
+        options.linear_solver_type = ceres::ITERATIVE_SCHUR;
+        options.max_num_iterations = 100;
         options.minimizer_progress_to_stdout = true;
 
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
         std::cout << summary.FullReport() << std::endl;
+        
+        _depths = idepths.cwiseInverse();
 
         return summary.final_cost;
     }
