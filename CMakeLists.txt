@@ -28,10 +28,12 @@ add_library(defocus
     inc/defocus/features.h
     inc/defocus/camera.h
     inc/defocus/sparse.h
+    inc/defocus/dense.h
     inc/defocus/io.h
     src/features.cpp
     src/camera.cpp
     src/sparse.cpp
+    src/dense.cpp
     src/io.cpp
 )
 
