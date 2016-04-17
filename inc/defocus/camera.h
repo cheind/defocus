@@ -25,6 +25,12 @@ namespace defocus {
         static Eigen::Matrix<double, 3, 4> smallMotionCameraParameterVectorToMatrix(Eigen::Ref<const Eigen::Matrix<double, 6, 1> > v);
         static Eigen::Matrix<double, 6, 1> smallMotionCameraMatrixToParameterVector(Eigen::Ref<const Eigen::Matrix<double, 3, 4> > v);
     };
+    
+    class ThinLensCamera {
+    public:
+        static double screenDistanceForObjectDistance(double f, double d);
+        static double circleOfConfusion(double f, double a, double dfocused, double d);
+    };
 }
 
 #endif

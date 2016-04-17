@@ -122,6 +122,9 @@ int main(int argc, char **argv) {
     cv::resize(tmp, tmp, cv::Size(), 0.5, 0.5);
     cv::imshow("dense", tmp);
     cv::waitKey();
+    
+    cv::imwrite("depths.png", tmp);
+    cv::imwrite("colors.png", ref);
 
     
 }

@@ -74,4 +74,18 @@ namespace defocus {
         
         return v;
     }
+    
+    
+    double ThinLensCamera::screenDistanceForObjectDistance(double f, double o) {
+        return (f * o) / (o - f);
+    }
+    
+    double ThinLensCamera::circleOfConfusion(double f, double a, double dfocused, double d) {
+        // Diameter of CoC in object space
+        double cocObject = a * (std::abs(d - dfocused) / d);
+        double mag = ThinLensCamera::screenDistanceForObjectDistance(f, dfocused) / dfocused;
+        return cocObject * mag;
+    }
+    
+    
 }

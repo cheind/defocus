@@ -53,3 +53,8 @@ add_executable(defocus_statistics
     examples/defocus_statistics.cpp
 )
 target_link_libraries(defocus_statistics defocus ${DEFOCUS_LINK_TARGETS})
+
+add_executable(blur_example
+examples/blur_example.cpp
+)
+target_link_libraries(blur_example defocus ${DEFOCUS_LINK_TARGETS})
