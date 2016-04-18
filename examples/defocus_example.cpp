@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
     cv::minMaxLoc(dense.denseDepthMap(), &minv, &maxv);
     
     cv::Mat tmp;
-    dense.denseDepthMap().convertTo(tmp, CV_8U, 255.0 / (maxv - minv), -minv * 255.0 / (maxv - minv));
+    dense.denseDepthMap().convertTo(tmp, CV_16U, (2<<16) / (maxv - minv), -minv * (2<<16) / (maxv - minv));
     cv::resize(tmp, tmp, cv::Size(), 0.5, 0.5);
     cv::imshow("dense", tmp);
     cv::waitKey();
