@@ -128,7 +128,7 @@ namespace defocus {
     
     int DenseDepthPropagation::scaleFactorForLevel(int level) const
     {
-        return std::pow(2, level);
+        return static_cast<int>(std::pow(2.0, level));
     }
     
     cv::Mat_<double> DenseDepthPropagation::solutionVectorToImage(int width, int height, const Eigen::VectorXd &v) const {
